@@ -27,7 +27,10 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services
     .AddGraphQLServer()
     .AddQueryType<Query>()
-    .AddMutationType<AuthMutation>()
+    .AddMutationType<Mutation>()
+    .AddProjections() // Aceasta probabil o ai deja
+    .AddFiltering()   // <--- ACEASTA LIPSEȘTE (Eroarea vine de aici)
+    .AddSorting()
     .ModifyRequestOptions(opt => opt.IncludeExceptionDetails = true);
 
 builder.Services.AddAuthorization();
