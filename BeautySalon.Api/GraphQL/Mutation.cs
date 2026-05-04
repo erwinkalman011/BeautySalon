@@ -2,6 +2,7 @@ namespace BeautySalon.Api.GraphQL;
 using BeautySalon.Api.Data;
 using BeautySalon.Api.Models;
 using BeautySalon.Api.Services;
+using Microsoft.EntityFrameworkCore;
 public class Mutation
 {
      public async Task<string> Register([Service] IAuthService authService, string email, string password)
@@ -27,5 +28,39 @@ public class Mutation
         context.Services.Add(service);
         await context.SaveChangesAsync();
         return service;
+    }
+
+    public async Task<Employee> AddEmployeeAsync(string name, [Service] AppDbContext context)
+    {
+    var employee = new Employee { Name = name };
+    context.Employees.Add(employee);
+    await context.SaveChangesAsync();
+    return employee;
+    }
+
+    public async Task<string> AssignServiceToEmployeeAsync(
+    int employeeId, 
+    int serviceId, 
+    [Service] AppDbContext context)
+    {
+    var employee = await context.Employees
+        .Include(e => e.Services)
+        .FirstOrDefaultAsync(e => e.Id == employeeId);
+
+    var service = await context.Services
+        .FirstOrDefaultAsync(s => s.Id == serviceId);
+
+    if (employee == null) return "Eroare: Angajatul nu a fost găsit.";
+    if (service == null) return "Eroare: Serviciul nu a fost găsit.";
+
+    if (employee.Services.Any(s => s.Id == serviceId))
+    {
+        return $"Angajatul {employee.Name} are deja asignat serviciul {service.Name}.";
+    }
+
+    employee.Services.Add(service);
+    await context.SaveChangesAsync();
+
+    return $"Succes! Serviciul '{service.Name}' a fost asignat lui {employee.Name}.";
     }
 }
