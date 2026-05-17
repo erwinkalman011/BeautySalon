@@ -3,6 +3,8 @@ using BeautySalon.Api.Data;
 using BeautySalon.Api.Models;
 using BeautySalon.Api.Services;
 using Microsoft.EntityFrameworkCore;
+using HotChocolate.Authorization;
+
 public class Mutation
 {
      public async Task<string> Register([Service] IAuthService authService, string email, string password)
@@ -14,6 +16,8 @@ public class Mutation
     {
         return await authService.LoginAsync(email, password);
     }
+
+    [Authorize(Roles = new[] { "Admin" })]
     public async Task<Category> AddCategoryAsync(string name, [Service] AppDbContext context)
     {
         var category = new Category { Name = name };
@@ -22,6 +26,7 @@ public class Mutation
         return category;
     }
 
+    [Authorize(Roles = new[] { "Admin" })]
     public async Task<Service> AddServiceAsync(string name, decimal price, int categoryId, [Service] AppDbContext context)
     {
         var service = new Service { Name = name, Price = price, CategoryId = categoryId };
@@ -29,7 +34,8 @@ public class Mutation
         await context.SaveChangesAsync();
         return service;
     }
-
+    
+    [Authorize(Roles = new[] { "Admin" })]
     public async Task<Employee> AddEmployeeAsync(string name, [Service] AppDbContext context)
     {
     var employee = new Employee { Name = name };
@@ -38,6 +44,7 @@ public class Mutation
     return employee;
     }
 
+    [Authorize(Roles = new[] { "Admin" })]
     public async Task<string> AssignServiceToEmployeeAsync(
     int employeeId, 
     int serviceId, 
