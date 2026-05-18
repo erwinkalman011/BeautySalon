@@ -48,12 +48,12 @@ builder.Services.AddAuthentication(options =>
     {
         OnMessageReceived = context =>
         {
-            Console.WriteLine($"\n 📩 [DEBUG] AM PRIMIT TOKEN-UL: {context.Token}");
+            //Console.WriteLine($"\n 📩 [DEBUG] AM PRIMIT TOKEN-UL: {context.Token}");
             return Task.CompletedTask;
         },
         OnAuthenticationFailed = context =>
         {
-            Console.WriteLine($"\n ❌ [DEBUG] EROARE VALIDARE TOKEN: {context.Exception.Message}");
+            //Console.WriteLine($"\n ❌ [DEBUG] EROARE VALIDARE TOKEN: {context.Exception.Message}");
             return Task.CompletedTask;
         }
     };

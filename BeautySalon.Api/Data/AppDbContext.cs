@@ -13,8 +13,9 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Category> Categories { get; set; } = null!;
     public DbSet<Service> Services { get; set; } = null!;
     public DbSet<Employee> Employees { get; set; } = null!;
-    // Mai târziu vei adăuga și public DbSet<Appointment> Appointments { get; set; }
-
+    public DbSet<WorkSchedule> WorkSchedules { get; set; }
+    public DbSet<Appointment> Appointments { get; set; } = null!;
+    
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Foarte important: apelează base.OnModelCreating când folosești Identity!
