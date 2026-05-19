@@ -76,21 +76,37 @@ public class Mutation
     public async Task<Appointment> CreateAppointmentAsync(
         int employeeId,
         int serviceId,
-        DateTime appointmentTime,
+        string appointmentTime,
         ClaimsPrincipal claimsPrincipal,
         [Service] AppDbContext context)
     {
-        var userId = claimsPrincipal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (userId == null) throw new GraphQLException("Unauthorized.");
+        if (!DateTime.TryParse(appointmentTime, out DateTime parsedStartTime))
+        {
+            throw new GraphQLException("Formatul datei/orei este invalid. Folosiți 'YYYY-MM-DDTHH:mm:ss'.");
+        }
+        var userId = (claimsPrincipal.FindFirst(ClaimTypes.NameIdentifier)?.Value) ?? throw new GraphQLException("Unauthorized.");
+        
+        if (parsedStartTime < DateTime.Now)
+        {
+            throw new GraphQLException("Nu puteți efectua o programare pentru o dată sau o oră din trecut.");
+        }
 
-        var service = await context.Services.FirstOrDefaultAsync(s => s.Id == serviceId);
-        if (service == null) throw new GraphQLException("Serviciul nu există.");
+        var service = await context.Services.FirstOrDefaultAsync(s => s.Id == serviceId) ?? throw new GraphQLException("Serviciul nu există.");
 
+        var employee = await context.Employees
+        .Include(e => e.Services)
+        .FirstOrDefaultAsync(e => e.Id == employeeId) ?? throw new GraphQLException("Angajatul selectat nu există.");
+
+        bool employeeProvidesService = employee.Services.Any(s => s.Id == serviceId);
+        if (!employeeProvidesService)
+        {
+            throw new GraphQLException($"Angajatul {employee.Name} no oferă serviciul '{service.Name}'.");
+        }
         int duration = service.DurationInMinutes;
-        DateTime proposedStart = appointmentTime;
-        DateTime proposedEnd = appointmentTime.AddMinutes(duration);
+        DateTime proposedStart = parsedStartTime;
+        DateTime proposedEnd = parsedStartTime.AddMinutes(duration);
 
-        var dayOfAppointment = appointmentTime.DayOfWeek;
+        var dayOfAppointment = parsedStartTime.DayOfWeek;
         var schedule = await context.WorkSchedules.FirstOrDefaultAsync(w =>
             w.EmployeeId == employeeId &&
             w.DayOfWeek == dayOfAppointment &&
@@ -127,7 +143,7 @@ public class Mutation
             UserId = userId,
             EmployeeId = employeeId,
             ServiceId = serviceId,
-            AppointmentTime = appointmentTime,
+            AppointmentTime = parsedStartTime,
             DurationInMinutes = duration,
             EndTime = proposedEnd,
             Status = "Confirmed"
@@ -139,32 +155,29 @@ public class Mutation
         return appointment;
     }
     [Authorize (Roles = new[] { "Client", "Admin" })]
-public async Task<string> CancelAppointmentAsync(
-    int appointmentId,
-    ClaimsPrincipal claimsPrincipal,
-    [Service] AppDbContext context)
-{
-    var userId = claimsPrincipal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-    if (userId == null) throw new GraphQLException("Neautorizat.");
-
-    var appointment = await context.Appointments.FirstOrDefaultAsync(a => a.Id == appointmentId);
-    if (appointment == null) throw new GraphQLException("Programarea nu a fost găsită.");
-
-    if (appointment.UserId != userId)
+    public async Task<string> CancelAppointmentAsync(
+        int appointmentId,
+        ClaimsPrincipal claimsPrincipal,
+        [Service] AppDbContext context)
     {
-        throw new GraphQLException("Nu aveți permisiunea de a anula această programare.");
+        var userId = (claimsPrincipal.FindFirst(ClaimTypes.NameIdentifier)?.Value) ?? throw new GraphQLException("Neautorizat.");
+        var appointment = await context.Appointments.FirstOrDefaultAsync(a => a.Id == appointmentId) ?? throw new GraphQLException("Programarea nu a fost găsită.");
+        
+        if (appointment.UserId != userId)
+        {
+            throw new GraphQLException("Nu aveți permisiunea de a anula această programare.");
+        }
+
+        if (appointment.AppointmentTime.AddHours(-24) < DateTime.Now)
+        {
+            throw new GraphQLException("Politica salonului: Programările nu mai pot fi anulate cu mai puțin de 24 de ore înainte.");
+        }
+
+        appointment.Status = "Canceled";
+        await context.SaveChangesAsync();
+
+        return "Programarea a fost anulată cu succes.";
     }
-
-    if (appointment.AppointmentTime.AddHours(-24) < DateTime.Now)
-    {
-        throw new GraphQLException("Politica salonului: Programările nu mai pot fi anulate cu mai puțin de 24 de ore înainte.");
-    }
-
-    appointment.Status = "Canceled";
-    await context.SaveChangesAsync();
-
-    return "Programarea a fost anulată cu succes.";
-}
 
 public async Task<WorkSchedule> AddWorkScheduleAsync(
     int employeeId,
@@ -173,9 +186,8 @@ public async Task<WorkSchedule> AddWorkScheduleAsync(
     string endTime,      
     [Service] AppDbContext context)
 {
-    var employee = await context.Employees.FindAsync(employeeId);
-    if (employee == null) throw new GraphQLException("Angajatul nu există.");
-
+    var employee = await context.Employees.FindAsync(employeeId) ?? throw new GraphQLException("Angajatul nu există.");
+    
     if (!TimeSpan.TryParse(startTime, out TimeSpan start) || 
         !TimeSpan.TryParse(endTime, out TimeSpan end))
     {
@@ -195,5 +207,19 @@ public async Task<WorkSchedule> AddWorkScheduleAsync(
     await context.SaveChangesAsync();
     
     return schedule;
+}
+public async Task<Service> UpdateServiceDurationAsync(
+    int serviceId,
+    int durationInMinutes,
+    [Service] AppDbContext context)
+{
+    var service = await context.Services.FindAsync(serviceId) ?? throw new GraphQLException("Serviciul nu a fost găsit.");
+    
+    if (durationInMinutes <= 0) throw new GraphQLException("Durata trebuie să fie mai mare de 0 minute.");
+
+    service.DurationInMinutes = durationInMinutes;
+    await context.SaveChangesAsync();
+
+    return service;
 }
 }

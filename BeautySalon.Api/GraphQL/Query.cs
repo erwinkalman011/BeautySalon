@@ -4,6 +4,8 @@ using BeautySalon.Api.Data;
 using HotChocolate;
 using HotChocolate.Data;
 using Microsoft.EntityFrameworkCore;
+using HotChocolate.Authorization;
+using System.Security.Claims;
 
 public class Query
 {
@@ -30,38 +32,46 @@ public class Query
     public async Task<List<string>> GetAvailableSlotsAsync(
     int employeeId,
     int serviceId,
-    DateTime date,
+    string date,
     [Service] AppDbContext context)
 {
     var availableSlots = new List<string>();
 
+    if (!DateTime.TryParse(date, out DateTime parsedDate))
+    {
+        throw new GraphQLException("Formatul datei este invalid. Folosiți 'YYYY-MM-DD'.");
+    }
+
+    if (parsedDate.Date < DateTime.Today)
+    {
+        throw new GraphQLException("Nu puteți verifica disponibilitatea pentru o dată din trecut.");
+    }
     var service = await context.Services.FirstOrDefaultAsync(s => s.Id == serviceId);
     if (service == null) return availableSlots;
 
-    var dayOfWeek = date.DayOfWeek;
+    var dayOfWeek = parsedDate.DayOfWeek;
     var schedule = await context.WorkSchedules.FirstOrDefaultAsync(w => 
         w.EmployeeId == employeeId && w.DayOfWeek == dayOfWeek && w.IsWorking);
 
     if (schedule == null) return availableSlots; 
 
     var existingAppointments = await context.Appointments
-        .Include(a => a.Service)
-        .Where(a => a.EmployeeId == employeeId && 
-                    a.AppointmentTime.Date == date.Date && 
-                    a.Status == "Confirmed")
-        .ToListAsync();
+    .Where(a => a.EmployeeId == employeeId && 
+                a.AppointmentTime.Date == parsedDate.Date && 
+                a.Status == "Confirmed")
+    .ToListAsync();
 
     TimeSpan currentSlot = schedule.StartTime;
     TimeSpan closingTime = schedule.EndTime;
 
-    while (currentSlot + TimeSpan.FromMinutes(service.DurationInMinutes) <= closingTime)
+    while (currentSlot + TimeSpan.FromMinutes(service.DurationInMinutes) < closingTime)
     {
-        DateTime proposedStart = date.Date.Add(currentSlot);
+        DateTime proposedStart = parsedDate.Date.Add(currentSlot);
         DateTime proposedEnd = proposedStart.AddMinutes(service.DurationInMinutes);
 
         bool hasOverlap = existingAppointments.Any(a => 
-            proposedStart < a.AppointmentTime.AddMinutes(a.Service.DurationInMinutes) && 
-            proposedEnd > a.AppointmentTime
+        proposedStart < a.EndTime && 
+        proposedEnd > a.AppointmentTime
         );
 
         if (!hasOverlap)
@@ -74,4 +84,40 @@ public class Query
 
     return availableSlots;
 }    
+[Authorize(Roles = new[] { "Admin" })]
+public async Task<List<Appointment>> GetAppointmentsAsync([Service] AppDbContext context)
+{
+    return await context.Appointments
+        .Include(a => a.Service)
+        .Include(a => a.Employee)
+        .OrderByDescending(a => a.AppointmentTime)
+        .ToListAsync();
+}
+
+[Authorize(Roles = new[] { "Client"})]
+public async Task<List<Appointment>> GetMyAppointmentsAsync(
+    ClaimsPrincipal claimsPrincipal,
+    [Service] AppDbContext context)
+{
+    var currentUserId = claimsPrincipal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+    
+    return await context.Appointments
+        .Include(a => a.Service)
+        .Include(a => a.Employee)
+        .Where(a => a.UserId == currentUserId)
+        .OrderByDescending(a => a.AppointmentTime)
+        .ToListAsync();
+}
+
+[Authorize(Roles = new[] { "Admin" })]
+public async Task<List<Appointment>> GetEmployeeAppointmentsAsync(
+    int employeeId,
+    [Service] AppDbContext context)
+{
+    return await context.Appointments
+        .Include(a => a.Service)
+        .Where(a => a.EmployeeId == employeeId && a.Status == "Confirmed")
+        .OrderBy(a => a.AppointmentTime)
+        .ToListAsync();
+}
 }   
