@@ -225,4 +225,18 @@ public async Task<Service> UpdateServiceDurationAsync(
 
     return service;
 }
+
+[Authorize(Roles = new[] { "Admin" })]
+public async Task<string> ResetEmployeeAccounts([Service] AppDbContext context)
+{
+        // Găsim toți angajații (mai puțin contul tău de admin dacă cumva folosești @salon.ro)
+        var usersToDelete = await context.Users
+            .Where(u => u.Email.EndsWith("@salon.ro") && u.Email != "admin@salon.ro")
+            .ToListAsync();
+            
+        context.Users.RemoveRange(usersToDelete);
+        await context.SaveChangesAsync();
+        
+        return "Toate conturile vechi ale angajatilor au fost sterse!";
+}
 }
