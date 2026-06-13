@@ -1,4 +1,5 @@
 namespace BeautySalon.Api.GraphQL;
+
 using BeautySalon.Api.Data;
 using BeautySalon.Api.Models;
 using BeautySalon.Api.Services;
@@ -8,7 +9,11 @@ using System.Security.Claims;
 
 public class Mutation
 {
-     public async Task<string> Register([Service] IAuthService authService, string email, string password)
+    // ==========================================
+    // 1. ZONA PUBLICĂ (Fără restricții)
+    // ==========================================
+
+    public async Task<string> Register([Service] IAuthService authService, string email, string password)
     {
         return await authService.RegisterAsync(email, password);
     }
@@ -17,6 +22,10 @@ public class Mutation
     {
         return await authService.LoginAsync(email, password);
     }
+
+    // ==========================================
+    // 2. ZONA DE MANAGEMENT (Exclusiv Admin)
+    // ==========================================
 
     [Authorize(Roles = new[] { "Admin" })]
     public async Task<Category> AddCategoryAsync(string name, [Service] AppDbContext context)
@@ -39,38 +48,89 @@ public class Mutation
     [Authorize(Roles = new[] { "Admin" })]
     public async Task<Employee> AddEmployeeAsync(string name, [Service] AppDbContext context)
     {
-    var employee = new Employee { Name = name };
-    context.Employees.Add(employee);
-    await context.SaveChangesAsync();
-    return employee;
+        var employee = new Employee { Name = name };
+        context.Employees.Add(employee);
+        await context.SaveChangesAsync();
+        return employee;
     }
 
     [Authorize(Roles = new[] { "Admin" })]
     public async Task<string> AssignServiceToEmployeeAsync(
-    int employeeId, 
-    int serviceId, 
-    [Service] AppDbContext context)
+        int employeeId, 
+        int serviceId, 
+        [Service] AppDbContext context)
     {
-    var employee = await context.Employees
-        .Include(e => e.Services)
-        .FirstOrDefaultAsync(e => e.Id == employeeId);
+        var employee = await context.Employees
+            .Include(e => e.Services)
+            .FirstOrDefaultAsync(e => e.Id == employeeId);
 
-    var service = await context.Services
-        .FirstOrDefaultAsync(s => s.Id == serviceId);
+        var service = await context.Services
+            .FirstOrDefaultAsync(s => s.Id == serviceId);
 
-    if (employee == null) return "Eroare: Angajatul nu a fost găsit.";
-    if (service == null) return "Eroare: Serviciul nu a fost găsit.";
+        if (employee == null) return "Eroare: Angajatul nu a fost găsit.";
+        if (service == null) return "Eroare: Serviciul nu a fost găsit.";
 
-    if (employee.Services.Any(s => s.Id == serviceId))
-    {
-        return $"Angajatul {employee.Name} are deja asignat serviciul {service.Name}.";
+        if (employee.Services.Any(s => s.Id == serviceId))
+        {
+            return $"Angajatul {employee.Name} are deja asignat serviciul {service.Name}.";
+        }
+
+        employee.Services.Add(service);
+        await context.SaveChangesAsync();
+
+        return $"Succes! Serviciul '{service.Name}' a fost asignat lui {employee.Name}.";
     }
 
-    employee.Services.Add(service);
-    await context.SaveChangesAsync();
+    [Authorize(Roles = new[] { "Admin" })]
+    public async Task<WorkSchedule> AddWorkScheduleAsync(
+        int employeeId,
+        DayOfWeek dayOfWeek, 
+        string startTime,    
+        string endTime,      
+        [Service] AppDbContext context)
+    {
+        var employee = await context.Employees.FindAsync(employeeId) ?? throw new GraphQLException("Angajatul nu există.");
+        
+        if (!TimeSpan.TryParse(startTime, out TimeSpan start) || 
+            !TimeSpan.TryParse(endTime, out TimeSpan end))
+        {
+            throw new GraphQLException("Formatul orelor este invalid. Folosiți 'HH:mm:ss'.");
+        }
 
-    return $"Succes! Serviciul '{service.Name}' a fost asignat lui {employee.Name}.";
+        var schedule = new WorkSchedule
+        {
+            EmployeeId = employeeId,
+            DayOfWeek = dayOfWeek,
+            StartTime = start,
+            EndTime = end,
+            IsWorking = true
+        };
+
+        context.WorkSchedules.Add(schedule);
+        await context.SaveChangesAsync();
+        
+        return schedule;
     }
+
+    [Authorize(Roles = new[] { "Admin" })]
+    public async Task<Service> UpdateServiceDurationAsync(
+        int serviceId,
+        int durationInMinutes,
+        [Service] AppDbContext context)
+    {
+        var service = await context.Services.FindAsync(serviceId) ?? throw new GraphQLException("Serviciul nu a fost găsit.");
+        
+        if (durationInMinutes <= 0) throw new GraphQLException("Durata trebuie să fie mai mare de 0 minute.");
+
+        service.DurationInMinutes = durationInMinutes;
+        await context.SaveChangesAsync();
+
+        return service;
+    }
+
+    // ==========================================
+    // 3. ZONA DE PROGRAMĂRI (Client, Angajat, Admin)
+    // ==========================================
 
     [Authorize(Roles = new[] { "Client", "Admin" })]
     public async Task<Appointment> CreateAppointmentAsync(
@@ -100,8 +160,9 @@ public class Mutation
         bool employeeProvidesService = employee.Services.Any(s => s.Id == serviceId);
         if (!employeeProvidesService)
         {
-            throw new GraphQLException($"Angajatul {employee.Name} no oferă serviciul '{service.Name}'.");
+            throw new GraphQLException($"Angajatul {employee.Name} nu oferă serviciul '{service.Name}'.");
         }
+        
         int duration = service.DurationInMinutes;
         DateTime proposedStart = parsedStartTime;
         DateTime proposedEnd = parsedStartTime.AddMinutes(duration);
@@ -154,21 +215,25 @@ public class Mutation
 
         return appointment;
     }
-    [Authorize (Roles = new[] { "Client", "Admin" })]
+
+    [Authorize (Roles = new[] { "Client", "Admin", "Angajat" })]
     public async Task<string> CancelAppointmentAsync(
         int appointmentId,
         ClaimsPrincipal claimsPrincipal,
         [Service] AppDbContext context)
     {
         var userId = (claimsPrincipal.FindFirst(ClaimTypes.NameIdentifier)?.Value) ?? throw new GraphQLException("Neautorizat.");
+        
+        var isClient = claimsPrincipal.IsInRole("Client");
+
         var appointment = await context.Appointments.FirstOrDefaultAsync(a => a.Id == appointmentId) ?? throw new GraphQLException("Programarea nu a fost găsită.");
         
-        if (appointment.UserId != userId)
+        if (isClient && appointment.UserId != userId)
         {
             throw new GraphQLException("Nu aveți permisiunea de a anula această programare.");
         }
 
-        if (appointment.AppointmentTime.AddHours(-24) < DateTime.Now)
+        if (isClient && appointment.AppointmentTime.AddHours(-24) < DateTime.Now)
         {
             throw new GraphQLException("Politica salonului: Programările nu mai pot fi anulate cu mai puțin de 24 de ore înainte.");
         }
@@ -178,65 +243,4 @@ public class Mutation
 
         return "Programarea a fost anulată cu succes.";
     }
-
-[Authorize(Roles = new[] { "Admin" })]
-public async Task<WorkSchedule> AddWorkScheduleAsync(
-    int employeeId,
-    DayOfWeek dayOfWeek, 
-    string startTime,    
-    string endTime,      
-    [Service] AppDbContext context)
-{
-    var employee = await context.Employees.FindAsync(employeeId) ?? throw new GraphQLException("Angajatul nu există.");
-    
-    if (!TimeSpan.TryParse(startTime, out TimeSpan start) || 
-        !TimeSpan.TryParse(endTime, out TimeSpan end))
-    {
-        throw new GraphQLException("Formatul orelor este invalid. Folosiți 'HH:mm:ss'.");
-    }
-
-    var schedule = new WorkSchedule
-    {
-        EmployeeId = employeeId,
-        DayOfWeek = dayOfWeek,
-        StartTime = start,
-        EndTime = end,
-        IsWorking = true
-    };
-
-    context.WorkSchedules.Add(schedule);
-    await context.SaveChangesAsync();
-    
-    return schedule;
-}
-
-[Authorize(Roles = new[] { "Admin" })]
-public async Task<Service> UpdateServiceDurationAsync(
-    int serviceId,
-    int durationInMinutes,
-    [Service] AppDbContext context)
-{
-    var service = await context.Services.FindAsync(serviceId) ?? throw new GraphQLException("Serviciul nu a fost găsit.");
-    
-    if (durationInMinutes <= 0) throw new GraphQLException("Durata trebuie să fie mai mare de 0 minute.");
-
-    service.DurationInMinutes = durationInMinutes;
-    await context.SaveChangesAsync();
-
-    return service;
-}
-
-[Authorize(Roles = new[] { "Admin" })]
-public async Task<string> ResetEmployeeAccounts([Service] AppDbContext context)
-{
-        // Găsim toți angajații (mai puțin contul tău de admin dacă cumva folosești @salon.ro)
-        var usersToDelete = await context.Users
-            .Where(u => u.Email.EndsWith("@salon.ro") && u.Email != "admin@salon.ro")
-            .ToListAsync();
-            
-        context.Users.RemoveRange(usersToDelete);
-        await context.SaveChangesAsync();
-        
-        return "Toate conturile vechi ale angajatilor au fost sterse!";
-}
 }
