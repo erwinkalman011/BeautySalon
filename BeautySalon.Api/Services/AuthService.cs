@@ -24,7 +24,6 @@ public class AuthService : IAuthService
 
     public async Task<string> RegisterAsync(string email, string password)
     {
-        // 1. VALIDARE EMAIL
         if (!new EmailAddressAttribute().IsValid(email))
         {
             throw new Exception("Eroare: Formatul adresei de email este invalid. Folosește un format de tip nume@domeniu.ro");
@@ -38,7 +37,6 @@ public class AuthService : IAuthService
             return string.Join(", ", result.Errors.Select(e => e.Description));
         }
 
-        // 2. CREAREA ROLURILOR
         string[] roleNames = { "Admin", "Angajat", "Client" };
         foreach (var roleName in roleNames)
         {
@@ -46,14 +44,13 @@ public class AuthService : IAuthService
                 await _roleManager.CreateAsync(new IdentityRole(roleName));
         }
 
-        // 3. ATRIBUIREA AUTOMATĂ A ROLURILOR
         var adminEmails = new List<string> { "singeorzanelena50@gmail.com", "erwinkalman1@gmail.com"};
 
         if (adminEmails.Contains(email))
         {
             await _userManager.AddToRoleAsync(user, "Admin");
         }
-        else if (email.EndsWith("@salon.ro")) // Angajații au email cu @salon.ro
+        else if (email.EndsWith("@salon.ro")) 
         {
             await _userManager.AddToRoleAsync(user, "Angajat");
         }
@@ -69,7 +66,6 @@ public class AuthService : IAuthService
     {
         var user = await _userManager.FindByEmailAsync(email);
         
-        // 4. MESAJE SPECIFICE DE EROARE
         if (user == null)
         {
             throw new Exception("Eroare: Nu există niciun cont înregistrat cu acest email.");

@@ -18,10 +18,7 @@ public class AppDbContext : IdentityDbContext<ApplicationUser>
     
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
-        // Foarte important: apelează base.OnModelCreating când folosești Identity!
         base.OnModelCreating(modelBuilder);
-
-        // Configurăm relația Many-to-Many între Employee și Service
         modelBuilder.Entity<Employee>()
             .HasMany(e => e.Services)
             .WithMany(s => s.Employees)

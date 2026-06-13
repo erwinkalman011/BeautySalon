@@ -108,16 +108,46 @@ public async Task<List<Appointment>> GetMyAppointmentsAsync(
         .OrderByDescending(a => a.AppointmentTime)
         .ToListAsync();
 }
+[Authorize(Roles = new[] { "Client", "Admin"})]
+public async Task<List<Service>> GetServicesWithEmployeesAsync(
+        [Service] AppDbContext context)
+    {
+        return await context.Services
+            .Include(s => s.Employees)
+            .ToListAsync();
+    }
 
-[Authorize(Roles = new[] { "Admin" })]
-public async Task<List<Appointment>> GetEmployeeAppointmentsAsync(
-    int employeeId,
-    [Service] AppDbContext context)
-{
-    return await context.Appointments
-        .Include(a => a.Service)
-        .Where(a => a.EmployeeId == employeeId && a.Status == "Confirmed")
-        .OrderBy(a => a.AppointmentTime)
-        .ToListAsync();
-}
+[Authorize(Roles = new[] { "Admin", "Angajat" })]
+    public async Task<List<Appointment>> GetEmployeeAllAppointmentsAsync(
+        int employeeId,
+        [Service] AppDbContext context)
+    {
+        return await context.Appointments
+            .Include(a => a.Service)
+            .Include(a => a.User) 
+            .Where(a => a.EmployeeId == employeeId)
+            .OrderByDescending(a => a.AppointmentTime) 
+            .ToListAsync();
+    }
+
+    [Authorize(Roles = new[] { "Admin", "Angajat" })]
+    public async Task<List<Appointment>> GetEmployeeAppointmentsByDayAsync(
+        int employeeId,
+        string date, 
+        [Service] AppDbContext context)
+    {
+        if (!DateTime.TryParse(date, out DateTime parsedDate))
+        {
+            throw new GraphQLException("Formatul datei este invalid. Folosiți 'YYYY-MM-DD'.");
+        }
+
+        return await context.Appointments
+            .Include(a => a.Service)
+            .Include(a => a.User)
+            .Where(a => a.EmployeeId == employeeId && 
+                        a.AppointmentTime.Date == parsedDate.Date &&
+                        a.Status == "Confirmed")
+            .OrderBy(a => a.AppointmentTime) 
+            .ToListAsync();
+    }
 }   
