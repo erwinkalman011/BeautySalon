@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
@@ -23,23 +24,38 @@ public class AuthService : IAuthService
 
     public async Task<string> RegisterAsync(string email, string password)
     {
-        var user = new ApplicationUser {UserName = email, Email = email };
+        // 1. VALIDARE EMAIL
+        if (!new EmailAddressAttribute().IsValid(email))
+        {
+            throw new Exception("Eroare: Formatul adresei de email este invalid. Folosește un format de tip nume@domeniu.ro");
+        }
+
+        var user = new ApplicationUser { UserName = email, Email = email };
         var result = await _userManager.CreateAsync(user, password);
 
-        if(!result.Succeeded)
+        if (!result.Succeeded)
         {
             return string.Join(", ", result.Errors.Select(e => e.Description));
         }
 
-        if (!await _roleManager.RoleExistsAsync("Admin"))
-            await _roleManager.CreateAsync(new IdentityRole("Admin"));
-        
-        if (!await _roleManager.RoleExistsAsync("Client"))
-            await _roleManager.CreateAsync(new IdentityRole("Client"));
+        // 2. CREAREA ROLURILOR
+        string[] roleNames = { "Admin", "Angajat", "Client" };
+        foreach (var roleName in roleNames)
+        {
+            if (!await _roleManager.RoleExistsAsync(roleName))
+                await _roleManager.CreateAsync(new IdentityRole(roleName));
+        }
 
-        if (email == "erwin2@test.ro" || email.Contains("admin"))
+        // 3. ATRIBUIREA AUTOMATĂ A ROLURILOR
+        var adminEmails = new List<string> { "singeorzanelena50@gmail.com", "erwinkalman1@gmail.com"};
+
+        if (adminEmails.Contains(email))
         {
             await _userManager.AddToRoleAsync(user, "Admin");
+        }
+        else if (email.EndsWith("@salon.ro")) // Angajații au email cu @salon.ro
+        {
+            await _userManager.AddToRoleAsync(user, "Angajat");
         }
         else
         {
@@ -52,9 +68,16 @@ public class AuthService : IAuthService
     public async Task<string?> LoginAsync(string email, string password)
     {
         var user = await _userManager.FindByEmailAsync(email);
-        if (user == null || !await _userManager.CheckPasswordAsync(user, password))
+        
+        // 4. MESAJE SPECIFICE DE EROARE
+        if (user == null)
         {
-            return null;
+            throw new Exception("Eroare: Nu există niciun cont înregistrat cu acest email.");
+        }
+
+        if (!await _userManager.CheckPasswordAsync(user, password))
+        {
+            throw new Exception("Eroare: Parolă incorectă. Încearcă din nou.");
         }
 
         return await GenerateJwtToken(user);

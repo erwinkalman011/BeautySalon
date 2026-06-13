@@ -179,6 +179,7 @@ public class Mutation
         return "Programarea a fost anulată cu succes.";
     }
 
+[Authorize(Roles = new[] { "Admin" })]
 public async Task<WorkSchedule> AddWorkScheduleAsync(
     int employeeId,
     DayOfWeek dayOfWeek, 
@@ -208,6 +209,8 @@ public async Task<WorkSchedule> AddWorkScheduleAsync(
     
     return schedule;
 }
+
+[Authorize(Roles = new[] { "Admin" })]
 public async Task<Service> UpdateServiceDurationAsync(
     int serviceId,
     int durationInMinutes,
