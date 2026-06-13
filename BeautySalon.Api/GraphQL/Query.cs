@@ -9,8 +9,6 @@ using System.Security.Claims;
 
 public class Query
 {
-    public string Salut() => "Serverul GraphQL functioneaza!";
-
     [UseProjection]
     [UseFiltering]
     [UseSorting]
@@ -83,52 +81,53 @@ public class Query
     }
 
     return availableSlots;
-}    
-[Authorize(Roles = new[] { "Admin" })]
-public async Task<List<Appointment>> GetAppointmentsAsync([Service] AppDbContext context)
-{
-    return await context.Appointments
-        .Include(a => a.Service)
-        .Include(a => a.Employee)
-        .OrderByDescending(a => a.AppointmentTime)
-        .ToListAsync();
-}
-
-[Authorize(Roles = new[] { "Client"})]
-public async Task<List<Appointment>> GetMyAppointmentsAsync(
-    ClaimsPrincipal claimsPrincipal,
-    [Service] AppDbContext context)
-{
-    var currentUserId = claimsPrincipal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-    
-    return await context.Appointments
-        .Include(a => a.Service)
-        .Include(a => a.Employee)
-        .Where(a => a.UserId == currentUserId)
-        .OrderByDescending(a => a.AppointmentTime)
-        .ToListAsync();
-}
-[Authorize(Roles = new[] { "Client", "Admin"})]
-public async Task<List<Service>> GetServicesWithEmployeesAsync(
-        [Service] AppDbContext context)
-    {
-        return await context.Services
-            .Include(s => s.Employees)
-            .ToListAsync();
     }
-
-[Authorize(Roles = new[] { "Admin", "Angajat" })]
-    public async Task<List<Appointment>> GetEmployeeAllAppointmentsAsync(
-        int employeeId,
-        [Service] AppDbContext context)
+    
+    [Authorize(Roles = new[] { "Admin" })]
+    public async Task<List<Appointment>> GetAppointmentsAsync([Service] AppDbContext context)
     {
         return await context.Appointments
             .Include(a => a.Service)
-            .Include(a => a.User) 
-            .Where(a => a.EmployeeId == employeeId)
-            .OrderByDescending(a => a.AppointmentTime) 
+            .Include(a => a.Employee)
+            .OrderByDescending(a => a.AppointmentTime)
             .ToListAsync();
     }
+
+    [Authorize(Roles = new[] { "Client"})]
+    public async Task<List<Appointment>> GetMyAppointmentsAsync(
+        ClaimsPrincipal claimsPrincipal,
+        [Service] AppDbContext context)
+    {
+        var currentUserId = claimsPrincipal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        
+        return await context.Appointments
+            .Include(a => a.Service)
+            .Include(a => a.Employee)
+            .Where(a => a.UserId == currentUserId)
+            .OrderByDescending(a => a.AppointmentTime)
+            .ToListAsync();
+    }
+    [Authorize(Roles = new[] { "Client", "Admin"})]
+    public async Task<List<Service>> GetServicesWithEmployeesAsync(
+            [Service] AppDbContext context)
+        {
+            return await context.Services
+                .Include(s => s.Employees)
+                .ToListAsync();
+        }
+
+    [Authorize(Roles = new[] { "Admin", "Angajat" })]
+        public async Task<List<Appointment>> GetEmployeeAllAppointmentsAsync(
+            int employeeId,
+            [Service] AppDbContext context)
+        {
+            return await context.Appointments
+                .Include(a => a.Service)
+                .Include(a => a.User) 
+                .Where(a => a.EmployeeId == employeeId)
+                .OrderByDescending(a => a.AppointmentTime) 
+                .ToListAsync();
+        }
 
     [Authorize(Roles = new[] { "Admin", "Angajat" })]
     public async Task<List<Appointment>> GetEmployeeAppointmentsByDayAsync(
